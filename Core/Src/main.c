@@ -29,6 +29,8 @@
 
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include "temperature_sensor.h"
+
 
 /* USER CODE END Includes */
 
@@ -48,17 +50,20 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c1;
 
 TIM_HandleTypeDef htim3;
 DMA_HandleTypeDef hdma_tim3_ch1_trig;
 
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 uint8_t button_pressed = 0; // Flag to indicate if the button is pressed
 
-led_handle_t heartbeat_led = {
+led_handle_t led_access = {
     .port = LD2_GPIO_Port,
     .pin = LD2_Pin
 };
@@ -89,6 +94,8 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -114,18 +121,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void heartbeat(void)
 {
-  static uint32_t last_toggle = 0;
-  if (HAL_GetTick() - last_toggle >= 500) { // Toggle every 500 ms
-    led_toggle(&heartbeat_led); // Toggle the heartbeat LED
-    last_toggle = HAL_GetTick();
-  }
+  // static uint32_t last_toggle = 0;
+  // if (HAL_GetTick() - last_toggle >= 500) { // Toggle every 500 ms
+  //   led_toggle(&heartbeat_led); // Toggle the heartbeat LED
+  //   last_toggle = HAL_GetTick();
+  // }
 }
 
 void write_to_oled(char *message, SSD1306_COLOR color, uint8_t x, uint8_t y)
 {
   ssd1306_Fill(Black); // Clear the display
   ssd1306_SetCursor(x, y); // Set cursor to the specified position
-  ssd1306_WriteString(message, Font_7x10, color);
+  ssd1306_WriteString(message, Font_11x18, color);
   ssd1306_UpdateScreen(); // Update the display to show the message
 }
 
@@ -164,16 +171,17 @@ int main(void)
   MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_TIM3_Init();
+  MX_ADC1_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-  led_init(&heartbeat_led);
+  //led_init(&heartbeat_led);
   ssd1306_Init();
   HAL_UART_Receive_IT(&huart2, &usart_2_rxbyte, 1);
   
   ring_buffer_init(&keypad_rb, keypad_buffer, KEYPAD_BUFFER_LEN);
   keypad_init(&keypad);
   
-  // TODO: TAREA - Descomentar cuando implementen la lógica del sistema
-  // room_control_init(&room_system);
+  room_control_init(&room_system);
 
   /* USER CODE END 2 */
 
@@ -182,31 +190,39 @@ int main(void)
   // Clear the display
   ssd1306_Fill(Black);
   // Display a message on the OLED
-  ssd1306_SetCursor(17, 17); // Set cursor to the center
-  ssd1306_WriteString("Hello, 4100901!", Font_7x10, White);
-  ssd1306_UpdateScreen(); // Update the display to show the
-  HAL_UART_Transmit(&huart2, (uint8_t *)"Hello, 4100901!\r\n", 17, HAL_MAX_DELAY);
+  ssd1306_SetCursor(10, 10); // Set cursor para evitar corte superior
+  ssd1306_WriteString("SISTEMA ", Font_11x18, White);
+  ssd1306_SetCursor(10, 30);
+  ssd1306_WriteString("BLOQUEADO", Font_11x18, White); // Display "BLOQUEADO" on the OLED
+  ssd1306_UpdateScreen(); // Update the display to show the message
+  HAL_UART_Transmit(&huart2, (uint8_t *)"SISTEMA BLOQUEADO\r\n", 18, HAL_MAX_DELAY);
   while (1) {
+    // Leer sensor de temperatura y actualizar sistema antes de actualizar la lógica
+    float temperature = temperature_sensor_read();
+    room_control_set_temperature(&room_system, temperature);
+
+    // Entrar en modo Sleep, se detiene la CPU hasta la próxima interrupción (EXTI)
+    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+
     heartbeat(); // Call the heartbeat function to toggle the LED
 
-    // TODO: TAREA - Descomentar cuando implementen la máquina de estados
-    // room_control_update(&room_system);
+    // Actualizar la lógica del sistema (incluye display)
+    room_control_update(&room_system);
 
     // DEMO: Keypad functionality - Remove when implementing room control logic
     if (keypad_interrupt_pin != 0) {
       char key = keypad_scan(&keypad, keypad_interrupt_pin);
       if (key != '\0') {
         write_to_oled(&key, White, 31, 31);
-        
         // TODO: TAREA - Descomentar para enviar teclas al sistema de control
-        // room_control_process_key(&room_system, key);
+        room_control_process_key(&room_system, key);
       }
       keypad_interrupt_pin = 0;
     }
 
     // DEMO: Button functionality - Remove when implementing room control logic  
     if (button_pressed) {
-      write_to_oled("Button Pressed!", White, 17, 17); // Display message on OLED
+      write_to_oled("Button Pressed!", White, 1, 1); // Display message en dos líneas en OLED
       button_pressed = 0; // Reset the flag
     }
 
@@ -218,10 +234,6 @@ int main(void)
 
     // TODO: TAREA - Implementar procesamiento de comandos remotos
     // command_parser_process(); // Procesar comandos de UART2 y UART3
-    
-    // TODO: TAREA - Leer sensor de temperatura y actualizar sistema
-    // float temperature = temperature_sensor_read();
-    // room_control_set_temperature(&room_system, temperature);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -279,6 +291,73 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
   * @brief I2C1 Initialization Function
   * @param None
   * @retval None
@@ -294,7 +373,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x10909CEC;
+  hi2c1.Init.Timing = 0x10D19CE4;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -411,6 +490,41 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -434,8 +548,8 @@ static void MX_DMA_Init(void)
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -464,20 +578,20 @@ static void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : KEYPAD_C1_Pin */
   GPIO_InitStruct.Pin = KEYPAD_C1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(KEYPAD_C1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : KEYPAD_C4_Pin */
   GPIO_InitStruct.Pin = KEYPAD_C4_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(KEYPAD_C4_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEYPAD_C2_Pin KEYPAD_C3_Pin */
   GPIO_InitStruct.Pin = KEYPAD_C2_Pin|KEYPAD_C3_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEYPAD_R2_Pin KEYPAD_R4_Pin KEYPAD_R3_Pin */
@@ -487,6 +601,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
@@ -494,8 +614,8 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
 }
 
 /* USER CODE BEGIN 4 */

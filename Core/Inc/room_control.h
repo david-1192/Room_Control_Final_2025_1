@@ -30,15 +30,18 @@ typedef struct {
     uint8_t input_index;
     uint32_t last_input_time;
     uint32_t state_enter_time;
-    
+
+    // Buffer para mostrar en display (16 caracteres + null terminator)
+    char display_buffer[17];
+
     // Door control
     bool door_locked;
-    
+
     // Temperature and fan control  
     float current_temperature;
     fan_level_t current_fan_level;
     bool manual_fan_override;
-    
+
     // Display update flags
     bool display_update_needed;
 } room_control_t;
