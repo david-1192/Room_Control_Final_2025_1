@@ -6,7 +6,7 @@
 **🚀Estructuras Computacionales S1-2025 – Room Control**
 
 ---
-### **1. Arquitectura de Hardware**
+### 💾**1. Arquitectura de Hardware**
 
 ```mermaid
 graph TD
@@ -36,7 +36,7 @@ graph TD
 - **PWM:** ventilador
 - **UART3:** módulo WiFi ESP-01
 
-### **2. Arquitectura de Firmware**
+### 🔄 **2. Arquitectura de Firmware**
 
 - **Super Loop:**  
   El firmware principal ejecuta un bucle infinito donde se actualizan sensores, se procesan eventos y se actualiza la lógica del sistema.
@@ -110,7 +110,7 @@ flowchart TD
 - **ssd1306.c:** Controla la pantalla OLED.
 - **command_parser.c:** Procesa comandos por UART.
 
-## **3. Protocolo de Comandos**
+## 🎛️**3. Protocolo de Comandos**
 El sistema implementa un protocolo por UART para control remoto desde ESP-01:
 
 - **GET_TEMP**  
