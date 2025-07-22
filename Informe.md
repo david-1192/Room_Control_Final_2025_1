@@ -8,24 +8,25 @@
 ---
 ### **1. Arquitectura de Hardware**
 
-
-graph TD
-    MCU[STM32L476RG]
-    OLED[OLED SSD1306]
-    Keypad[Teclado Matricial 4x4]
-    NTC[Sensor NTC]
-    Fan[Ventilador PWM]
-    DOOR[DOOR_STATUS]
-    ESP01[WiFi ESP-01]
-    LD2[LED Heartbeat]
-
-    MCU -- I2C --> OLED
-    MCU -- GPIO --> Keypad
-    MCU -- GPIO PA4 --> DOOR
-    MCU -- GPIO PA5 --> LD2
-    MCU -- ADC PA0 --> NTC
-    MCU -- PWM PA6 --> Fan
-    MCU -- UART3 PA2,PA3 --> ESP01
+```mermaid
+    graph TD
+        MCU[STM32L476RG]
+        OLED[OLED SSD1306]
+        Keypad[Teclado Matricial 4x4]
+        NTC[Sensor NTC]
+        Fan[Ventilador PWM]
+        DOOR[DOOR_STATUS]
+        ESP01[WiFi ESP-01]
+        LD2[LED Heartbeat]
+    
+        MCU -- I2C --> OLED
+        MCU -- GPIO --> Keypad
+        MCU -- GPIO PA4 --> DOOR
+        MCU -- GPIO PA5 --> LD2
+        MCU -- ADC PA0 --> NTC
+        MCU -- PWM PA6 --> Fan
+        MCU -- UART3 PA2,PA3 --> ESP01
+    ```
 
 ## Interfaces:
 
@@ -62,20 +63,23 @@ Acceso concedido. Se activa el indicador de acceso y se muestra temperatura y ni
 Acceso denegado. Se muestra mensaje de error y regresa a LOCKED tras un tiempo.
 
 
-stateDiagram-v2
-  direction TB
-  [*] --> LOCKED: Inicio
-  LOCKED --> INPUT_PASSWORD: Tecla válida
-  INPUT_PASSWORD --> CHECK_PASSWORD: Presiona #
-  INPUT_PASSWORD --> LOCKED: Espera (10 seg)
-  CHECK_PASSWORD --> UNLOCKED: Contraseña correcta
-  CHECK_PASSWORD --> ACCESS_DENIED: Contraseña incorrecta
-  UNLOCKED --> LOCKED: Presiona *
-  ACCESS_DENIED --> LOCKED: Espera (3 seg)
-Diagrama de Flujo del Firmware
+```mermaid
+    stateDiagram-v2
+        direction TB
+        [*] --> LOCKED: Inicio
+        LOCKED --> INPUT_PASSWORD: Tecla válida
+        INPUT_PASSWORD --> CHECK_PASSWORD: Presiona #
+        INPUT_PASSWORD --> LOCKED: Espera (10 seg)
+        CHECK_PASSWORD --> UNLOCKED: Contraseña correcta
+        CHECK_PASSWORD --> ACCESS_DENIED: Contraseña incorrecta
+        UNLOCKED --> LOCKED: Presiona *
+        ACCESS_DENIED --> LOCKED: Espera (3 seg)
+```
 
-flowchart TD
-  subgraph MainLoop["main.c Super Loop"]
+Diagrama de Flujo del Firmware
+```mermaid
+    flowchart TD
+    subgraph MainLoop["main.c Super Loop"]
     A1["Inicio"]
     A2["Inicialización de periféricos"]
     A3["ssd1306 Init"]
@@ -114,6 +118,9 @@ flowchart TD
 
   style RoomControl stroke:#00C853
   style MainLoop stroke:#2962FF
+  
+
+
 
 - **main.c:** Inicializa periféricos y ejecuta el super loop.
 
