@@ -56,6 +56,7 @@ stateDiagram-v2
   CHECK_PASSWORD --> ACCESS_DENIED: Contraseña incorrecta
   UNLOCKED --> LOCKED: Presiona *
   ACCESS_DENIED --> LOCKED: Espera (3 seg)
+  ACCESS_DENIED --> LOCKED: Mensaje de alerta HTTP "Acesso denegado"
 ```
 
 #### Diagrama de Flujo del Firmware
