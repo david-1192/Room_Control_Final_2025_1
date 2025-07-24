@@ -98,6 +98,10 @@ void Error_Handler(void);
 #define KEYPAD_R4_GPIO_Port GPIOB
 #define KEYPAD_R3_Pin GPIO_PIN_5
 #define KEYPAD_R3_GPIO_Port GPIOB
+#define USART3_TX_Pin GPIO_PIN_4
+#define USART3_TX_GPIO_Port GPIOC
+#define USART3_RX_Pin GPIO_PIN_5
+#define USART3_RX_GPIO_Port GPIOC
 
 /* USER CODE BEGIN Private defines */
 

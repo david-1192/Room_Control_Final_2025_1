@@ -2,6 +2,7 @@
 #define ROOM_CONTROL_H
 
 #include "main.h"
+#include "led.h"      // <-- Agrega esta línea
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -26,12 +27,12 @@ typedef enum {
 typedef struct {
     room_state_t current_state;
     char password[PASSWORD_LENGTH + 1];
-    char input_buffer[PASSWORD_LENGTH + 1];
+    char input_buffer[17];
     uint8_t input_index;
     uint32_t last_input_time;
     uint32_t state_enter_time;
 
-    // Buffer para mostrar en display (16 caracteres + null terminator)
+    // Buffer para mostrar en display (8 caracteres + null terminator)
     char display_buffer[17];
 
     // Door control
@@ -44,6 +45,7 @@ typedef struct {
 
     // Display update flags
     bool display_update_needed;
+    led_handle_t *led;
 } room_control_t;
 
 // Public functions
@@ -52,7 +54,8 @@ void room_control_update(room_control_t *room);
 void room_control_process_key(room_control_t *room, char key);
 void room_control_set_temperature(room_control_t *room, float temperature);
 void room_control_force_fan_level(room_control_t *room, fan_level_t level);
-void room_control_change_password(room_control_t *room, const char *new_password);
+bool room_control_change_password(room_control_t *room, const char *new_password);
+bool room_control_force_fan(room_control_t *room, int level);
 
 // Status getters
 room_state_t room_control_get_state(room_control_t *room);

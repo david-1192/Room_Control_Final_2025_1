@@ -1,23 +1,24 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ **************************
+ * @file           : main.c
+ * @brief          : Main program body
+ **************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ **************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "stm32l4xx_hal.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -26,11 +27,12 @@
 #include "ring_buffer.h"
 #include "room_control.h"
 #include <stdio.h>
+#include <string.h>
 
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
 #include "temperature_sensor.h"
-
+#include "command_parser.h"
 
 /* USER CODE END Includes */
 
@@ -64,18 +66,21 @@ UART_HandleTypeDef huart3;
 uint8_t button_pressed = 0; // Flag to indicate if the button is pressed
 
 led_handle_t led_access = {
-    .port = LD2_GPIO_Port,
-    .pin = LD2_Pin
-};
+    .port = GPIOA,
+    .pin = GPIO_PIN_4};
 
-uint8_t usart_2_rxbyte = 0; // Variable to hold received byte from UART3
+led_handle_t heartbeat_led = {
+    .port = LD2_GPIO_Port,
+    .pin = LD2_Pin};
+uint8_t usart_2_rxbyte = 0; // Variable to hold received byte from UART2
+uint8_t usart_3_rxbyte = 0; // Variable to hold received byte from UART3
+uint8_t rx_byte_esp01 = 0;  // Variable to hold received byte for ESP-01 (USART3)
 
 keypad_handle_t keypad = {
     .row_ports = {KEYPAD_R1_GPIO_Port, KEYPAD_R2_GPIO_Port, KEYPAD_R3_GPIO_Port, KEYPAD_R4_GPIO_Port},
-    .row_pins  = {KEYPAD_R1_Pin, KEYPAD_R2_Pin, KEYPAD_R3_Pin, KEYPAD_R4_Pin},
+    .row_pins = {KEYPAD_R1_Pin, KEYPAD_R2_Pin, KEYPAD_R3_Pin, KEYPAD_R4_Pin},
     .col_ports = {KEYPAD_C1_GPIO_Port, KEYPAD_C2_GPIO_Port, KEYPAD_C3_GPIO_Port, KEYPAD_C4_GPIO_Port},
-    .col_pins  = {KEYPAD_C1_Pin, KEYPAD_C2_Pin, KEYPAD_C3_Pin, KEYPAD_C4_Pin}
-};
+    .col_pins = {KEYPAD_C1_Pin, KEYPAD_C2_Pin, KEYPAD_C3_Pin, KEYPAD_C4_Pin}};
 
 #define KEYPAD_BUFFER_LEN 16
 uint8_t keypad_buffer[KEYPAD_BUFFER_LEN];
@@ -91,11 +96,11 @@ room_control_t room_system;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -104,44 +109,58 @@ static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN 0 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if (GPIO_Pin == B1_Pin) {
+  if (GPIO_Pin == B1_Pin)
+  {
     button_pressed = 1; // Set the flag when the button is pressed
-  } else {
+  }
+  else
+  {
     keypad_interrupt_pin = GPIO_Pin;
   }
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  if (huart->Instance == USART2) {
+  if (huart->Instance == USART3)
+  {
+    command_parser_process_esp01(usart_3_rxbyte);
+    HAL_UART_Receive_IT(&huart3, &usart_3_rxbyte, 1);
+  }
+  else if (huart->Instance == USART2)
+  {
+    command_parser_process_debug(usart_2_rxbyte);
     HAL_UART_Receive_IT(&huart2, &usart_2_rxbyte, 1);
   }
 }
 
-
 void heartbeat(void)
 {
-  // static uint32_t last_toggle = 0;
-  // if (HAL_GetTick() - last_toggle >= 500) { // Toggle every 500 ms
-  //   led_toggle(&heartbeat_led); // Toggle the heartbeat LED
-  //   last_toggle = HAL_GetTick();
-  // }
+  static uint32_t last_toggle = 0;
+  if (HAL_GetTick() - last_toggle >= 500)
+  {                             // Toggle every 500 ms
+    led_toggle(&heartbeat_led); // Toggle the heartbeat LED
+    last_toggle = HAL_GetTick();
+  }
 }
 
 void write_to_oled(char *message, SSD1306_COLOR color, uint8_t x, uint8_t y)
 {
-  ssd1306_Fill(Black); // Clear the display
+  ssd1306_Fill(Black);     // Clear the display
   ssd1306_SetCursor(x, y); // Set cursor to the specified position
   ssd1306_WriteString(message, Font_11x18, color);
   ssd1306_UpdateScreen(); // Update the display to show the message
+}
+void command_parser(void)
+{
+  
 }
 
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
 
@@ -168,21 +187,21 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_USART2_UART_Init();
   MX_I2C1_Init();
   MX_TIM3_Init();
   MX_ADC1_Init();
   MX_USART3_UART_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  //led_init(&heartbeat_led);
+
   ssd1306_Init();
+  HAL_UART_Receive_IT(&huart3, &usart_3_rxbyte, 1);
   HAL_UART_Receive_IT(&huart2, &usart_2_rxbyte, 1);
-  
+
   ring_buffer_init(&keypad_rb, keypad_buffer, KEYPAD_BUFFER_LEN);
   keypad_init(&keypad);
-  
-  room_control_init(&room_system);
 
+  room_control_init(&room_system);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -194,9 +213,11 @@ int main(void)
   ssd1306_WriteString("SISTEMA ", Font_11x18, White);
   ssd1306_SetCursor(10, 30);
   ssd1306_WriteString("BLOQUEADO", Font_11x18, White); // Display "BLOQUEADO" on the OLED
-  ssd1306_UpdateScreen(); // Update the display to show the message
-  HAL_UART_Transmit(&huart2, (uint8_t *)"SISTEMA BLOQUEADO\r\n", 18, HAL_MAX_DELAY);
-  while (1) {
+  ssd1306_UpdateScreen();                              // Update the display to show the message
+  
+ 
+  while (1)
+  {
     // Leer sensor de temperatura y actualizar sistema antes de actualizar la lógica
     float temperature = temperature_sensor_read();
     room_control_set_temperature(&room_system, temperature);
@@ -209,31 +230,19 @@ int main(void)
     // Actualizar la lógica del sistema (incluye display)
     room_control_update(&room_system);
 
-    // DEMO: Keypad functionality - Remove when implementing room control logic
-    if (keypad_interrupt_pin != 0) {
+    // Keypad funcionalidad
+    if (keypad_interrupt_pin != 0)
+    {
       char key = keypad_scan(&keypad, keypad_interrupt_pin);
-      if (key != '\0') {
+      if (key != '\0')
+      {
         write_to_oled(&key, White, 31, 31);
-        // TODO: TAREA - Descomentar para enviar teclas al sistema de control
         room_control_process_key(&room_system, key);
       }
       keypad_interrupt_pin = 0;
     }
 
-    // DEMO: Button functionality - Remove when implementing room control logic  
-    if (button_pressed) {
-      write_to_oled("Button Pressed!", White, 1, 1); // Display message en dos líneas en OLED
-      button_pressed = 0; // Reset the flag
-    }
-
-    // DEMO: UART functionality - Remove when implementing room control logic
-    if (usart_2_rxbyte != 0) {
-      write_to_oled((char *)&usart_2_rxbyte, White, 31, 31); // Display received byte on OLED
-      usart_2_rxbyte = 0; // Reset the received byte variable
-    }
-
-    // TODO: TAREA - Implementar procesamiento de comandos remotos
-    // command_parser_process(); // Procesar comandos de UART2 y UART3
+    command_parser(); // Procesar comandos de UART2 y UART3
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -242,24 +251,24 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
   /** Configure the main internal regulator output voltage
-  */
+   */
   if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
+   * in the RCC_OscInitTypeDef structure.
+   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
@@ -276,9 +285,8 @@ void SystemClock_Config(void)
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
@@ -291,10 +299,10 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief ADC1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_ADC1_Init(void)
 {
 
@@ -310,7 +318,7 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 1 */
 
   /** Common config
-  */
+   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
@@ -332,7 +340,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure the ADC multi-mode
-  */
+   */
   multimode.Mode = ADC_MODE_INDEPENDENT;
   if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
   {
@@ -340,7 +348,7 @@ static void MX_ADC1_Init(void)
   }
 
   /** Configure Regular Channel
-  */
+   */
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
@@ -354,14 +362,13 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
-
 }
 
 /**
-  * @brief I2C1 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief I2C1 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_I2C1_Init(void)
 {
 
@@ -387,14 +394,14 @@ static void MX_I2C1_Init(void)
   }
 
   /** Configure Analogue filter
-  */
+   */
   if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Digital filter
-  */
+   */
   if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
   {
     Error_Handler();
@@ -402,14 +409,13 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
-
 }
 
 /**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief TIM3 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_TIM3_Init(void)
 {
 
@@ -451,14 +457,13 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 2 */
   HAL_TIM_MspPostInit(&htim3);
-
 }
 
 /**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief USART2 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_USART2_UART_Init(void)
 {
 
@@ -486,14 +491,13 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
-
 }
 
 /**
-  * @brief USART3 Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief USART3 Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_USART3_UART_Init(void)
 {
 
@@ -521,12 +525,11 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
-
 }
 
 /**
-  * Enable DMA controller clock
-  */
+ * Enable DMA controller clock
+ */
 static void MX_DMA_Init(void)
 {
 
@@ -537,14 +540,13 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel6_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
-
 }
 
 /**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -558,10 +560,10 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, DOOR_STATUS_Pin|LD2_Pin|KEYPAD_R1_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, DOOR_STATUS_Pin | LD2_Pin | KEYPAD_R1_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, KEYPAD_R2_Pin|KEYPAD_R4_Pin|KEYPAD_R3_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, KEYPAD_R2_Pin | KEYPAD_R4_Pin | KEYPAD_R3_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
@@ -570,7 +572,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : DOOR_STATUS_Pin LD2_Pin KEYPAD_R1_Pin */
-  GPIO_InitStruct.Pin = DOOR_STATUS_Pin|LD2_Pin|KEYPAD_R1_Pin;
+  GPIO_InitStruct.Pin = DOOR_STATUS_Pin | LD2_Pin | KEYPAD_R1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -589,23 +591,17 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(KEYPAD_C4_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEYPAD_C2_Pin KEYPAD_C3_Pin */
-  GPIO_InitStruct.Pin = KEYPAD_C2_Pin|KEYPAD_C3_Pin;
+  GPIO_InitStruct.Pin = KEYPAD_C2_Pin | KEYPAD_C3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pins : KEYPAD_R2_Pin KEYPAD_R4_Pin KEYPAD_R3_Pin */
-  GPIO_InitStruct.Pin = KEYPAD_R2_Pin|KEYPAD_R4_Pin|KEYPAD_R3_Pin;
+  GPIO_InitStruct.Pin = KEYPAD_R2_Pin | KEYPAD_R4_Pin | KEYPAD_R3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
@@ -623,9 +619,9 @@ static void MX_GPIO_Init(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -637,14 +633,14 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */

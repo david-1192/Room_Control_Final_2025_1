@@ -47,14 +47,16 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    Core/Src/main.c
+    Core/Src/room_control.c
+    Core/Src/temperature_sensor.c
+    Core/Src/command_parser.c
+    # Otros archivos fuente necesarios
     Drivers/LED/led.c
     Drivers/ring_buffer/ring_buffer.c
     Drivers/ssd1306/ssd1306.c
     Drivers/ssd1306/ssd1306_fonts.c
     Drivers/keypad/keypad.c
-    Core/Src/room_control.c
-    Core/Src/temperature_sensor.c
-    # Add user sources here
 )
 
 # Add include paths
@@ -63,6 +65,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/ring_buffer
     Drivers/ssd1306
     Drivers/keypad
+    Core/Src
     # Add user defined include paths
 )
 
